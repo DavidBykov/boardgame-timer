@@ -4,8 +4,8 @@ class CountdownTimer extends TimerEngine {
         
         // Default template values if none provided
         this.template = template || {
-            turn_time_seconds: 60,
-            round_time_seconds: 1800
+            turn_time_seconds: 30,
+            round_time_seconds: 180
         };
         
         this.initializeCountdowns();
@@ -13,7 +13,8 @@ class CountdownTimer extends TimerEngine {
 
     initializeCountdowns() {
         this.players.forEach(player => {
-            player.turnTime = this.template.turn_time_seconds;
+            // roundTime is the only timer per player — it counts down while active
+            // turn_time_seconds is the increment added back at end of each turn
             player.roundTime = this.template.round_time_seconds;
             player.isOvertime = false;
             player.overtimeSeconds = 0;
@@ -32,22 +33,22 @@ class CountdownTimer extends TimerEngine {
         const currentPlayer = this.players[this.currentPlayerIndex];
 
         if (this.mode === 2) {
-            // Mode 2: Countdown both timers
-            currentPlayer.turnTime -= deltaTime;
+            // Mode 2: Only round timer counts down.
+            // turn_time_seconds is the increment added at end of turn (capped at initial round_time_seconds).
             currentPlayer.roundTime -= deltaTime;
-            
-            // Turn alerts
-            if (currentPlayer.turnTime <= 10 && currentPlayer.turnTime > 5 && !currentPlayer.alert10Triggered) {
+
+            // Alerts based on round time remaining
+            if (currentPlayer.roundTime <= 10 && currentPlayer.roundTime > 5 && !currentPlayer.alert10Triggered) {
                 this.triggerTurnAlert(10);
                 currentPlayer.alert10Triggered = true;
             }
-            if (currentPlayer.turnTime <= 5 && currentPlayer.turnTime > 0 && !currentPlayer.alert5Triggered) {
+            if (currentPlayer.roundTime <= 5 && currentPlayer.roundTime > 0 && !currentPlayer.alert5Triggered) {
                 this.triggerTurnAlert(5);
                 currentPlayer.alert5Triggered = true;
             }
 
             // Track overtime
-            if (currentPlayer.turnTime <= 0 || currentPlayer.roundTime <= 0) {
+            if (currentPlayer.roundTime <= 0) {
                 if (!currentPlayer.isOvertime) {
                     currentPlayer.isOvertime = true;
                     this.triggerOvertimeAlert();
@@ -110,10 +111,14 @@ class CountdownTimer extends TimerEngine {
         currentPlayer.isActive = false;
         currentPlayer.turnsCount++;
 
-        // Reset turn timer for Mode 2 (but not round timer)
         if (this.mode === 2) {
-            currentPlayer.turnTime = this.template.turn_time_seconds;
-            currentPlayer.isOvertime = false; // Reset overtime for new turn
+            // Add turn increment to this player's round time, but never exceed the initial round_time_seconds
+            currentPlayer.roundTime = Math.min(
+                currentPlayer.roundTime + this.template.turn_time_seconds,
+                this.template.round_time_seconds
+            );
+            // Reset overtime and alerts for next time this player is active
+            currentPlayer.isOvertime = false;
             currentPlayer.alert10Triggered = false;
             currentPlayer.alert5Triggered = false;
         }
@@ -156,7 +161,7 @@ class CountdownTimer extends TimerEngine {
             window.HapticManager.vibrateTurnAlert();
         }
         
-        console.log(`Turn alert: ${seconds} seconds remaining`);
+        console.log(`Round time alert: ${seconds} seconds remaining`);
     }
     
     triggerOvertimeAlert() {
@@ -191,7 +196,6 @@ class CountdownTimer extends TimerEngine {
                 totalTime: player.totalTime,
                 turnsCount: player.turnsCount,
                 averageTurnTime: player.turnsCount > 0 ? player.totalTime / player.turnsCount : 0,
-                finalTurnTime: player.turnTime,
                 finalRoundTime: player.roundTime,
                 wasOvertime: player.isOvertime,
                 overtimeSeconds: player.overtimeSeconds || 0
